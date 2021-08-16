@@ -28,7 +28,12 @@ var (
 		"set-COOkie Set-COOkie sEt-COOkie SEt-COOkie seT-COOkie SeT-COOkie sET-COOkie SET-COOkie", " ")
 )
 
-type _o = map[string]interface{}
+type (
+	_o               = map[string]interface{}
+	ResponseRecorder struct{ *httptest.ResponseRecorder }
+)
+
+func (*ResponseRecorder) CloseNotify() <-chan bool { return nil }
 
 /* request parsing related */
 func parseBody(_body string, decode bool) []byte {
@@ -57,6 +62,10 @@ func parseHeadersMV(_headers _o) map[string]string {
 		headers[k] = headers[k][:len(headers[k])-1]
 	}
 	return headers
+}
+
+func extractHeaderV(v string) string {
+	return strings.TrimSpace(v[strings.LastIndex(v, ",")+1:])
 }
 
 func parseQS(_qs _o) string {
@@ -158,11 +167,10 @@ func getMetaFor(ev _o) *meta {
 	}
 
 	m.QS = strings.ReplaceAll(m.QS, " ", "%20")
-	m.RemoteAddr = strings.TrimSpace(m.Headers["x-forwarded-for"][
-		strings.LastIndex(m.Headers["x-forwarded-for"], ",")+1:])
-	m.Scheme = m.Headers["x-forwarded-proto"]
+	m.RemoteAddr = extractHeaderV(m.Headers["x-forwarded-for"])
+	m.Scheme = extractHeaderV(m.Headers["x-forwarded-proto"])
 	m.Host = m.Headers["host"]
-	m.Port, _ = strconv.Atoi(m.Headers["x-forwarded-port"])
+	m.Port, _ = strconv.Atoi(extractHeaderV(m.Headers["x-forwarded-port"]))
 	return m
 }
 
@@ -244,7 +252,7 @@ func MakeHandler(handler http.Handler) func(ctx context.Context, ev _o) (_o, err
 			debugFound(found)
 			return found, nil
 		}
-		w, req := httptest.NewRecorder(), getReqFor(m)
+		w, req := &ResponseRecorder{httptest.NewRecorder()}, getReqFor(m)
 		these[req] = &this{ctx, ev, m}
 		handler.ServeHTTP(w, req)
 		delete(these, req)
